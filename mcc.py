@@ -75,9 +75,32 @@ class MCCServer:
 
             if cmd == 'list':
                 with self.lock:
-                    print(f"\nActive Drones: {len(self.fleet)}")
+                    # Check connection status for all drones
+                    active_count = 0
+                    dead_drones = []
+                    
                     for did, data in self.fleet.items():
-                        print(f" - {did} [{data['status']}]")
+                        try:
+                            # Test if socket is still alive
+                            data['socket'].getpeername()
+                            data['status'] = 'ACTIVE'
+                            active_count += 1
+                        except:
+                            data['status'] = 'DISCONNECTED'
+                            dead_drones.append(did)
+                    
+                    print(f"\nTotal Drones: {len(self.fleet)} (Active: {active_count}, Disconnected: {len(dead_drones)})")
+                    for did, data in self.fleet.items():
+                        status_marker = "✓" if data['status'] == 'ACTIVE' else "✗"
+                        print(f" {status_marker} {did} [{data['status']}]")
+                    
+                    # Optionally auto-remove disconnected drones
+                    if dead_drones:
+                        print(f"\n[!] Found {len(dead_drones)} disconnected drone(s).")
+                        # Uncomment next lines to auto-remove:
+                        # for did in dead_drones:
+                        #     del self.fleet[did]
+                        # print(f"[*] Removed disconnected drones.")
             
             elif cmd == 'broadcast':
                 if len(parts) < 2:
@@ -87,6 +110,16 @@ class MCCServer:
                 
             elif cmd == 'shutdown':
                 print("[*] Shutting down MCC...")
+                # Send shutdown notification to all drones
+                with self.lock:
+                    shutdown_msg = {'opcode': 90, 'payload': 'SHUTDOWN'}
+                    for did, drone_data in list(self.fleet.items()):
+                        try:
+                            self.send_json(drone_data['socket'], shutdown_msg)
+                            print(f"[*] Sent shutdown notification to {did}")
+                        except Exception as e:
+                            print(f"[!] Failed to notify {did}: {e}")
+                    print("[*] All drones notified. Shutting down...")
                 self.running = False
                 sys.exit(0)
 
@@ -185,16 +218,33 @@ class MCCServer:
             conn.close()
 
     def perform_broadcast(self, cmd_text):
+        # with self.lock:
+        #     if not self.fleet:
+        #         print("[!] No active drones.")
+        #         return
         with self.lock:
-            if not self.fleet:
-                print("[!] No active drones.")
-                return
+        # Remove dead connections
+            dead_drones = []
+            for did, drone_data in self.fleet.items():
+                try:
+                    # Test if socket is still alive
+                    drone_data['socket'].getpeername()
+                except:
+                    dead_drones.append(did)
+            
+            for did in dead_drones:
+                del self.fleet[did]
+                print(f"[*] Removed disconnected drone: {did}")
+
                 
             print(f"[*] Broadcasting: '{cmd_text}' to {len(self.fleet)} drones.")
+            # Compute Group Key: GK = H(SK_D1 || SK_D2 || ... || SK_Dn || KR_MCC)
             hasher = hashlib.sha256()
             for did in sorted(self.fleet.keys()):
                 hasher.update(self.fleet[did]['sk'])
-            hasher.update(str(self.priv_key).encode())
+            # Use consistent byte encoding for private key
+            priv_key_bytes = self.priv_key.to_bytes((self.priv_key.bit_length() + 7) // 8, byteorder='big')
+            hasher.update(priv_key_bytes)
             gk = hasher.digest()
             
             enc_cmd = cu.aes_encrypt(gk, cmd_text.encode())

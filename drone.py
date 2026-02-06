@@ -56,9 +56,26 @@ class DroneClient:
         params = msg['payload']
         p = params['p']
         g = params['g']
+        sl = params['sl']
         mcc_pub_key = params.get('pub_key') # Automatically fetch MCC Key
 
-        print(f"[*] Parameters Received. MCC Public Key found: {mcc_pub_key is not None}")
+        # --- SECURITY VALIDATION (REQUIRED BY ASSIGNMENT) ---
+        # Check 1: Verify prime bit length matches claimed SL
+        p_bit_length = p.bit_length()
+        if abs(p_bit_length - sl) > 10:  # Allow small tolerance for edge cases
+            print(f"[!] SECURITY ALERT: Parameter mismatch!")
+            print(f"    Prime is {p_bit_length}-bit but SL claims {sl}-bit")
+            print(f"    Possible MitM attack detected. Aborting connection.")
+            return
+        
+        # Check 2: Enforce minimum security level (2048-bit minimum)
+        if sl < 2048:
+            print(f"[!] SECURITY ALERT: Security level {sl} below minimum requirement (2048)")
+            print(f"    Rejecting weak cryptographic parameters. Aborting connection.")
+            return
+        
+        print(f"[*] Parameters Validated: {p_bit_length}-bit prime, SL={sl}")
+        print(f"[*] MCC Public Key found: {mcc_pub_key is not None}")
 
         # Generate Own Keys
         priv_key, pub_key = cu.elgamal_keygen(p, g)
@@ -153,6 +170,12 @@ class DroneClient:
                 
                 cmd = cu.aes_decrypt(self.gk, enc_cmd).decode()
                 print(f"[CMD] EXECUTING: {cmd}")
+            
+            elif opcode == 90: # Shutdown Command
+                print("[*] SHUTDOWN command received from MCC.")
+                print("[*] Closing connection gracefully...")
+                self.running = False
+                break
 
 if __name__ == "__main__":
     # Generate random ID if not provided
