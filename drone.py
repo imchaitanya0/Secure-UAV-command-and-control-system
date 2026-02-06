@@ -108,10 +108,24 @@ class DroneClient:
         msg = self.recv_json()
         if not msg: return
         
+        # SECURITY: Validate opcode
+        if msg['opcode'] != 30:
+            print(f"[!] SECURITY ALERT: Unexpected opcode {msg['opcode']} in Phase 1B (expected 30)")
+            print(f"    Possible protocol violation. Aborting connection.")
+            return
+        
         resp = msg['payload']
         ts_mcc, rn_mcc = resp['ts'], resp['rn']
         c1_mcc, c2_mcc = resp['c1'], resp['c2']
         r_mcc, s_mcc = resp['r'], resp['s']
+        
+        # SECURITY: Check timestamp freshness (prevent replay attacks)
+        ALLOWED_DRIFT = 60  # seconds
+        if abs(time.time() - ts_mcc) > ALLOWED_DRIFT:
+            print(f"[!] SECURITY ALERT: Stale timestamp from MCC in Phase 1B")
+            print(f"    Timestamp drift: {abs(time.time() - ts_mcc):.1f}s (max: {ALLOWED_DRIFT}s)")
+            print(f"    Possible replay attack detected. Aborting connection.")
+            return
         
         # Verify MCC Signature
         sig_msg_mcc = f"{ts_mcc}{rn_mcc}{params['id_mcc']}{c1_mcc}{c2_mcc}".encode()
@@ -166,7 +180,14 @@ class DroneClient:
                     
                 payload = msg['payload']
                 enc_cmd = bytes.fromhex(payload['enc_cmd'])
-                # (Optional) Verify HMAC of command here for extra security
+                recv_hmac = bytes.fromhex(payload['hmac'])
+                
+                # SECURITY: Verify HMAC (REQUIRED by spec, not optional)
+                expected_hmac = cu.compute_hmac(self.gk, payload['enc_cmd'])
+                if not hmac.compare_digest(recv_hmac, expected_hmac):
+                    print("[!] SECURITY ALERT: HMAC verification failed for command!")
+                    print("    Message integrity compromised. Ignoring command.")
+                    continue
                 
                 cmd = cu.aes_decrypt(self.gk, enc_cmd).decode()
                 print(f"[CMD] EXECUTING: {cmd}")

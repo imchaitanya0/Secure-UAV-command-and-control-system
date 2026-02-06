@@ -26,6 +26,9 @@ class MCCServer:
         self.seen_nonces = set() # Stores (drone_id, rn) to prevent Replay Attacks
         self.lock = threading.Lock()
         self.running = True
+        
+        # Root secret for Group Key derivation (KR_MCC per spec)
+        self.root_secret = secrets.token_bytes(32)
 
         print(f"[*] MCC Ready.")
         print("-" * 60)
@@ -201,6 +204,13 @@ class MCCServer:
             hmac_received = bytes.fromhex(data['payload']['hmac'])
             ts_final = data['payload']['ts_final']
             
+            # SECURITY: Check timestamp freshness in Phase 2 (prevent replay)
+            if abs(time.time() - ts_final) > 60:
+                print(f"[!] SECURITY ALERT: Stale Phase 2 confirmation from {drone_id}")
+                print(f"    Possible replay attack. Aborting connection.")
+                conn.close()
+                return
+            
             expected_hmac = cu.compute_hmac(sk, f"{drone_id}{ts_final}")
             
             if hmac.compare_digest(hmac_received, expected_hmac):
@@ -242,9 +252,8 @@ class MCCServer:
             hasher = hashlib.sha256()
             for did in sorted(self.fleet.keys()):
                 hasher.update(self.fleet[did]['sk'])
-            # Use consistent byte encoding for private key
-            priv_key_bytes = self.priv_key.to_bytes((self.priv_key.bit_length() + 7) // 8, byteorder='big')
-            hasher.update(priv_key_bytes)
+            # Use MCC root secret (KR_MCC) as per spec
+            hasher.update(self.root_secret)
             gk = hasher.digest()
             
             enc_cmd = cu.aes_encrypt(gk, cmd_text.encode())
