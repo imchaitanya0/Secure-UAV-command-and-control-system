@@ -261,8 +261,42 @@ def derive_session_key(k_dm, ts_d, ts_mcc, rn_d, rn_mcc):
     sk = hashlib.sha256(blob).digest()
     return sk
 
+def benchmark_mod_exp(bit_length=2048, iterations=10):
+    """
+    Benchmark modular exponentiation performance.
+    Returns average time in milliseconds for the given bit length.
+    """
+    import time
+    p, g = get_standard_safe_prime()
+    
+    times = []
+    for _ in range(iterations):
+        # Generate random exponent
+        exp = secrets.randbelow(p - 2) + 1
+        
+        start = time.perf_counter()
+        result = manual_mod_exp(g, exp, p)
+        end = time.perf_counter()
+        
+        times.append((end - start) * 1000)  # Convert to milliseconds
+    
+    avg_time = sum(times) / len(times)
+    min_time = min(times)
+    max_time = max(times)
+    
+    return {
+        'bit_length': bit_length,
+        'iterations': iterations,
+        'avg_ms': avg_time,
+        'min_ms': min_time,
+        'max_ms': max_time
+    }
+
 def compute_hmac(key, message):
     """
     HMAC-SHA256 Wrapper
+    Handles both string and bytes input.
     """
-    return hmac.new(key, message.encode(), hashlib.sha256).digest()
+    if isinstance(message, str):
+        message = message.encode()
+    return hmac.new(key, message, hashlib.sha256).digest()
