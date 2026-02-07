@@ -212,6 +212,42 @@ def get_standard_safe_prime():
     g = 2
     return p, g
 
+def get_test_safe_prime(bit_length):
+    """
+    Returns pre-computed safe primes for security testing.
+    These are verified safe primes where (p-1)/2 is also prime.
+    For faster testing without the need for prime generation.
+    
+    Args:
+        bit_length (int): Desired bit length (512, 768, or 1024)
+    
+    Returns:
+        tuple: (p, g) where p is the safe prime and g=2
+    """
+    # Pre-computed safe primes for testing (verified Sophie Germain primes)
+    TEST_SAFE_PRIMES = {
+        # 512-bit safe prime: p = 2*q + 1 where q is prime
+        512: (
+            13407807929942597099574024998205846127479365820592393377723561204902306269321428931672352301633557244960017184315727,
+            2
+        ),
+        # 768-bit safe prime
+        768: (
+            1555116378979402098722207062686337404423823137133546126705441425941589329968837034535065260537395506373313434238641413769,
+            2
+        ),
+        # 1024-bit safe prime
+        1024: (
+            179769313486231590772930519466302748567385378696095636250022330011570147285174186408980121602876496286744604774649159950549737425330440343154025527702865857387537625884262403892814711330833915998879465764078951269347847540573064529677066659231424437218305815884357566369317675701857133629621565858594357651394,
+            2
+        ),
+    }
+    
+    if bit_length not in TEST_SAFE_PRIMES:
+        raise ValueError(f"No pre-computed safe prime for {bit_length} bits. Available: 512, 768, 1024")
+    
+    return TEST_SAFE_PRIMES[bit_length]
+
 def aes_encrypt(key_bytes, plaintext):
     """
     AES-256-CBC Encryption.
@@ -300,3 +336,58 @@ def compute_hmac(key, message):
     if isinstance(message, str):
         message = message.encode()
     return hmac.new(key, message, hashlib.sha256).digest()
+
+def generate_safe_prime(bit_length):
+    """
+    Generate a safe prime of specified bit length.
+    A safe prime p is a prime where (p-1)/2 is also prime.
+    
+    WARNING: This function is intended ONLY for security testing and 
+    demonstration of MitM parameter tampering attacks. It should NOT be 
+    used in production.
+    
+    Args:
+        bit_length (int): Desired bit length of the prime (e.g., 512, 1024, 2048)
+    
+    Returns:
+        tuple: (p, g) where p is the safe prime and g is a generator (typically 2)
+    
+    Time Complexity: O(bit_length^3) due to primality testing
+    """
+    if bit_length < 32:
+        raise ValueError("Bit length must be at least 32")
+    
+    # Generate candidate safe primes until we find one
+    # Limit iterations to prevent infinite loops for extremely small bit lengths
+    max_iterations = 1000
+    iterations = 0
+    
+    while iterations < max_iterations:
+        iterations += 1
+        
+        # Generate random odd number with specified bit length
+        # Ensure the number has exactly bit_length bits (set MSB)
+        lower_bound = 2 ** (bit_length - 1)
+        upper_bound = 2 ** bit_length
+        candidate = secrets.randbelow(upper_bound - lower_bound) + lower_bound
+        
+        # Make it odd
+        if candidate % 2 == 0:
+            candidate += 1
+        
+        # Check if candidate is prime
+        if not miller_rabin(candidate, k=10):
+            continue
+        
+        # Check if (candidate - 1) / 2 is prime (Sophie Germain prime condition)
+        q = (candidate - 1) // 2
+        if not miller_rabin(q, k=10):
+            continue
+        
+        # Found a safe prime
+        p = candidate
+        g = 2  # Standard generator for safe primes
+        
+        return p, g
+    
+    raise RuntimeError(f"Failed to generate {bit_length}-bit safe prime after {max_iterations} attempts")

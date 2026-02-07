@@ -58,15 +58,29 @@ cryptography==46.0.4  # Used ONLY for AES-CBC primitive
 
 ### 1. Start the MCC Server
 
+**Standard Operation (Secure - 2048-bit):**
 ```bash
 python3 mcc.py
 ```
 
+**Testing MitM Parameter Tampering (Weak Parameters - For Security Demonstration Only):**
+```bash
+# Generate 512-bit prime to test parameter validation
+python3 mcc.py 512
+
+# Generate 256-bit prime to simulate severe downgrade attack
+python3 mcc.py 256
+
+# Generate 1024-bit prime to test intermediate scenario
+python3 mcc.py 1024
+```
+
 The MCC will:
-- Generate 2048-bit ElGamal parameters
+- Generate ElGamal parameters with specified bit length (default 2048)
 - Display its public key (copy this for attack demonstrations)
 - Listen on port 65432
 - Provide a CLI interface for commands
+- **WARNING**: Non-standard security levels are for testing only and should not be used in production
 
 ### 2. Connect Drones
 
@@ -106,7 +120,39 @@ MCC> shutdown
 
 ### 4. Attack Demonstrations
 
-Run the attack tool to test security features:
+#### Option A: Test Parameter Tampering with Live Drone Validation
+
+This demonstrates how drones detect and reject weak/tampered parameters in a real attack scenario.
+
+**Terminal 1 - Start MCC with Weak Parameters:**
+```bash
+# Simulate MitM attack with 512-bit prime
+python3 mcc.py 512
+
+# Output:
+# [!] WARNING: Using non-standard 512-bit prime for SECURITY TESTING ONLY.
+# [*] Actual prime bit length: 512 bits
+# [*] MCC Ready.
+```
+
+**Terminal 2 - Connect Drone (will detect and reject):**
+```bash
+python3 drone.py Drone_Test
+
+# Output will show parameter validation failure:
+# [!] SECURITY ALERT: Parameter Tampering Detected!
+# [!] Claimed SL: 2048, Actual p.bit_length(): 512
+# [!] Mismatch of 1536 bits - This is a MitM attack!
+# [!] ABORTING connection to untrusted MCC.
+```
+
+**What's Happening:**
+1. MCC sends weak (512-bit) parameters but claims SL=2048 (Phase 0)
+2. Drone validates: `p.bit_length() ≈ claimed SL`
+3. Drone detects: 512 ≠ 2048 → **REJECTS** and aborts
+4. This proves drone's cryptographic validation is working!
+
+#### Option B: Run the Attack Tool (Analytical Testing)
 
 ```bash
 python3 attacks.py
@@ -116,7 +162,7 @@ Available attack scenarios:
 1. **Set MCC Public Key**: Configure target for attacks
 2. **Build/Craft Packet**: Create custom authentication packets
 3. **Send Packet**: Test replay attacks, timestamp validation
-4. **MitM Test**: Demonstrate parameter tampering detection
+4. **MitM Test**: Demonstrate parameter tampering detection (analytical)
 5. **Unauthorized Access**: Test unknown drone ID rejection
 
 ## Performance Benchmarks

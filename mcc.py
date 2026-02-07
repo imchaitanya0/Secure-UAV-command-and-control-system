@@ -11,13 +11,40 @@ import crypto_utils as cu
 # Configuration
 HOST = '0.0.0.0'
 PORT = 65432
-SL = 2048
+DEFAULT_SL = 2048
 
 class MCCServer:
-    def __init__(self):
-        print(f"[*] Initializing MCC... Generating {SL}-bit parameters.")
-        # Load parameters (Phase 0 logic)
-        self.p, self.g = cu.get_standard_safe_prime()
+    def __init__(self, sl=DEFAULT_SL):
+        """
+        Initialize MCC with configurable security level.
+        
+        Args:
+            sl (int): Security level (bit length of prime). Default 2048.
+                      For testing weak parameters, pass lower values.
+        """
+        self.sl = sl
+        print(f"[*] Initializing MCC... Generating {self.sl}-bit parameters.")
+        
+        # Phase 0: Parameter Initialization
+        # Load parameters (either standard or weak for testing)
+        if self.sl == DEFAULT_SL:
+            # Use standard RFC 3526 safe prime for production
+            self.p, self.g = cu.get_standard_safe_prime()
+        else:
+            # Use pre-computed safe prime for security testing/demonstration
+            print(f"[!] WARNING: Using non-standard {self.sl}-bit prime for SECURITY TESTING ONLY.")
+            try:
+                self.p, self.g = cu.get_test_safe_prime(self.sl)
+            except ValueError as e:
+                print(f"[!] ERROR: {e}")
+                print(f"[!] Available test bit lengths: 512, 768, 1024")
+                sys.exit(1)
+        
+        # Verify actual prime bit length matches claimed SL
+        actual_bits = self.p.bit_length()
+        print(f"[*] Actual prime bit length: {actual_bits} bits")
+        
+        # ElGamal key generation
         self.priv_key, self.pub_key = cu.elgamal_keygen(self.p, self.g)
         self.mcc_id = "MCC_MAIN_HQ"
         
@@ -129,7 +156,7 @@ class MCCServer:
             # --- PHASE 0 ---
             ts0 = int(time.time())
             params = {
-                'p': self.p, 'g': self.g, 'sl': SL,
+                'p': self.p, 'g': self.g, 'sl': self.sl,
                 'ts': ts0, 'id_mcc': self.mcc_id,
                 'pub_key': self.pub_key 
             }
@@ -278,5 +305,25 @@ class MCCServer:
         except: return None
 
 if __name__ == "__main__":
-    server = MCCServer()
+    # Parse command-line arguments
+    sl = DEFAULT_SL
+    
+    if len(sys.argv) > 1:
+        try:
+            sl = int(sys.argv[1])
+            # Validate bit length
+            valid_lengths = [512, 768, 1024, 2048]
+            if sl not in valid_lengths:
+                print(f"[!] ERROR: Security level must be one of {valid_lengths}. Got {sl}.")
+                sys.exit(1)
+            if sl == DEFAULT_SL:
+                print(f"[*] Using default security level: {sl} bits")
+            else:
+                print(f"[!] WARNING: Non-default security level {sl} bits specified.")
+                print(f"[!] This should ONLY be used for security testing/demonstrations.")
+        except ValueError:
+            print(f"[!] ERROR: Invalid security level argument. Expected integer, got '{sys.argv[1]}'")
+            sys.exit(1)
+    
+    server = MCCServer(sl)
     server.start()
