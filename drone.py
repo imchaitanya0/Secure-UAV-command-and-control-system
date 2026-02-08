@@ -19,8 +19,10 @@ class DroneClient:
 
     def connect(self):
         try:
-            self.sock.connect((MCC_IP, MCC_PORT))
-            print(f"[*] Connected to MCC at {MCC_IP}:{MCC_PORT}")
+            # Use the current module's MCC_PORT (which may have been overridden)
+            current_port = sys.modules[__name__].MCC_PORT
+            self.sock.connect((MCC_IP, current_port))
+            print(f"[*] Connected to MCC at {MCC_IP}:{current_port}")
             self.protocol_handshake()
             self.listen_for_commands()
         except Exception as e:
@@ -207,10 +209,24 @@ class DroneClient:
                     
                 payload = msg['payload']
                 enc_cmd = bytes.fromhex(payload['enc_cmd'])
-                # (Optional) Verify HMAC of command here for extra security
+                received_hmac = bytes.fromhex(payload['hmac'])
                 
-                cmd = cu.aes_decrypt(self.gk, enc_cmd).decode()
-                print(f"[CMD] EXECUTING: {cmd}")
+                # Verify HMAC of encrypted command for integrity
+                expected_hmac = cu.compute_hmac(self.gk, payload['enc_cmd'])
+                
+                if not hmac.compare_digest(received_hmac, expected_hmac):
+                    print("[!] 🚨 SECURITY ALERT: Broadcast HMAC verification FAILED!")
+                    print("    Command integrity compromised - possible MitM attack!")
+                    print("    Refusing to execute tampered broadcast command.")
+                    continue
+                
+                # HMAC verified, safe to decrypt and execute
+                try:
+                    cmd = cu.aes_decrypt(self.gk, enc_cmd).decode()
+                    print(f"[CMD] ✅ HMAC verified - EXECUTING: {cmd}")
+                except Exception as e:
+                    print(f"[!] Failed to decrypt command: {e}")
+                    print("    Possible encryption tampering detected.")
             
             elif opcode == 90: # Shutdown Command
                 print("[*] SHUTDOWN command received from MCC.")
@@ -219,7 +235,43 @@ class DroneClient:
                 break
 
 if __name__ == "__main__":
-    # Generate random ID if not provided
-    did = sys.argv[1] if len(sys.argv) > 1 else f"Drone_{secrets.randbelow(999)}"
-    client = DroneClient(did)
+    # Parse command line arguments for MitM attack testing
+    # Usage: python3 drone.py [drone_id] [port]
+    # Examples: 
+    #   python3 drone.py                     -> Random ID, port 65432
+    #   python3 drone.py MyDrone             -> MyDrone, port 65432  
+    #   python3 drone.py MyDrone 65434       -> MyDrone, port 65434 (for MitM test)
+    #   python3 drone.py 65434               -> Random ID, port 65434 (for MitM test)
+    
+    args = sys.argv[1:]
+    
+    # Default values
+    drone_id = f"Drone_{secrets.randbelow(999)}"
+    target_port = MCC_PORT  # Use the default port from config
+    
+    if len(args) == 1:
+        # One argument: could be drone_id or port
+        arg = args[0]
+        if arg.isdigit():
+            # It's a port number
+            target_port = int(arg)
+            print(f"[*] Using port {target_port} with random drone ID: {drone_id}")
+        else:
+            # It's a drone ID
+            drone_id = arg
+            print(f"[*] Using drone ID: {drone_id} with default port: {target_port}")
+    elif len(args) == 2:
+        # Two arguments: drone_id and port
+        drone_id = args[0]
+        target_port = int(args[1])
+        print(f"[*] Using drone ID: {drone_id} with port: {target_port}")
+    else:
+        # No arguments or too many
+        print(f"[*] Using random drone ID: {drone_id} with default port: {target_port}")
+    
+    # Override the global MCC_PORT with the target port
+    current_module = sys.modules[__name__]
+    current_module.MCC_PORT = target_port
+    
+    client = DroneClient(drone_id)
     client.connect()
