@@ -153,14 +153,29 @@ class MCCServer:
     def handle_drone(self, conn, addr):
         drone_id = "Unknown"
         try:
-            # --- PHASE 0 ---
+            # --- PHASE 0: SECURE PARAMETER INITIALIZATION ---
             ts0 = int(time.time())
+            id_mcc = self.mcc_id
+            
+            # Create message to sign: p || g || sl || ts0 || id_mcc
+            phase0_msg = f"{self.p}{self.g}{self.sl}{ts0}{id_mcc}".encode()
+            
+            # Sign Phase 0 parameters with MCC private key
+            r0, s0 = cu.elgamal_sign(phase0_msg, self.priv_key, self.p, self.g)
+            
+            # Send signed Phase 0 parameters
             params = {
-                'p': self.p, 'g': self.g, 'sl': self.sl,
-                'ts': ts0, 'id_mcc': self.mcc_id,
-                'pub_key': self.pub_key 
+                'p': self.p, 
+                'g': self.g, 
+                'sl': self.sl,
+                'ts0': ts0,           # Phase 0 timestamp 
+                'id_mcc': id_mcc,     # MCC identity
+                'pub_key': self.pub_key,
+                'r0': r0,             # Phase 0 signature (r component)
+                's0': s0              # Phase 0 signature (s component)
             }
             self.send_json(conn, {'opcode': 10, 'payload': params})
+            print(f"[*] Phase 0 sent to {addr} with signature and timestamp {ts0}")
 
             # --- PHASE 1A ---
             data = self.recv_json(conn)

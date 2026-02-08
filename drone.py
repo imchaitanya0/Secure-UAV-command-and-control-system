@@ -46,7 +46,7 @@ class DroneClient:
         except: return None
 
     def protocol_handshake(self):
-        # --- PHASE 0: RECEIVE PARAMETERS ---
+        # --- PHASE 0: RECEIVE AND VERIFY SECURE PARAMETERS ---
         print("[*] Waiting for Phase 0 Parameters...")
         msg = self.recv_json()
         if not msg: 
@@ -57,10 +57,51 @@ class DroneClient:
         p = params['p']
         g = params['g']
         sl = params['sl']
-        mcc_pub_key = params.get('pub_key') # Automatically fetch MCC Key
+        ts0 = params.get('ts0')           # Phase 0 timestamp
+        id_mcc = params.get('id_mcc')     # MCC identity  
+        mcc_pub_key = params.get('pub_key')  # MCC public key
+        r0 = params.get('r0')             # Phase 0 signature (r)
+        s0 = params.get('s0')             # Phase 0 signature (s)
 
         # --- SECURITY VALIDATION (REQUIRED BY ASSIGNMENT) ---
-        # Check 1: Verify prime bit length matches claimed SL
+        
+        # Check 1: Verify all required Phase 0 fields are present
+        if not all([ts0, id_mcc, mcc_pub_key, r0, s0]):
+            print("[!] SECURITY ALERT: Missing Phase 0 security fields!")
+            print("    Required: ts0, id_mcc, pub_key, r0, s0")
+            print("    Possible incomplete or malicious MCC. Aborting connection.")
+            return
+        
+        # Check 2: Verify MCC signature on Phase 0 parameters
+        phase0_msg = f"{p}{g}{sl}{ts0}{id_mcc}".encode()
+        if not cu.elgamal_verify(phase0_msg, r0, s0, mcc_pub_key, p, g):
+            print("[!] SECURITY ALERT: Phase 0 signature verification FAILED!")
+            print("    MCC signature is invalid or parameters have been tampered with.")
+            print("    Possible MitM attack detected. Aborting connection.")
+            return
+        
+        print("[*] ✅ Phase 0 signature verified - MCC is authentic")
+        
+        # Check 3: Verify timestamp freshness (within 30 seconds)
+        current_time = int(time.time())
+        time_diff = abs(current_time - ts0)
+        if time_diff > 30:
+            print(f"[!] SECURITY ALERT: Phase 0 timestamp is stale!")
+            print(f"    Timestamp age: {time_diff} seconds (max allowed: 30)")
+            print(f"    Possible replay attack detected. Aborting connection.")
+            return
+        
+        print(f"[*] ✅ Timestamp freshness verified - {time_diff}s old")
+        
+        # Check 4: Verify MCC identity (basic validation)
+        if not id_mcc or len(id_mcc.strip()) == 0:
+            print("[!] SECURITY ALERT: Invalid or empty MCC identity!")
+            print("    MCC identity verification failed. Aborting connection.")
+            return
+        
+        print(f"[*] ✅ MCC identity verified: {id_mcc}")
+        
+        # Check 5: Verify prime bit length matches claimed SL
         p_bit_length = p.bit_length()
         if abs(p_bit_length - sl) > 10:  # Allow small tolerance for edge cases
             print(f"[!] SECURITY ALERT: Parameter mismatch!")
@@ -68,14 +109,14 @@ class DroneClient:
             print(f"    Possible MitM attack detected. Aborting connection.")
             return
         
-        # Check 2: Enforce minimum security level (2048-bit minimum)
+        # Check 6: Enforce minimum security level (2048-bit minimum)
         if sl < 2048:
             print(f"[!] SECURITY ALERT: Security level {sl} below minimum requirement (2048)")
             print(f"    Rejecting weak cryptographic parameters. Aborting connection.")
             return
         
-        print(f"[*] Parameters Validated: {p_bit_length}-bit prime, SL={sl}")
-        print(f"[*] MCC Public Key found: {mcc_pub_key is not None}")
+        print(f"[*] ✅ Parameters Validated: {p_bit_length}-bit prime, SL={sl}")
+        print(f"[*] ✅ PHASE 0 SECURITY COMPLETE - All checks passed!")
 
         # Generate Own Keys
         priv_key, pub_key = cu.elgamal_keygen(p, g)
@@ -114,7 +155,7 @@ class DroneClient:
         r_mcc, s_mcc = resp['r'], resp['s']
         
         # Verify MCC Signature
-        sig_msg_mcc = f"{ts_mcc}{rn_mcc}{params['id_mcc']}{c1_mcc}{c2_mcc}".encode()
+        sig_msg_mcc = f"{ts_mcc}{rn_mcc}{id_mcc}{c1_mcc}{c2_mcc}".encode()
         if not cu.elgamal_verify(sig_msg_mcc, r_mcc, s_mcc, mcc_pub_key, p, g):
             print("[!] MCC Signature Verification Failed!")
             return
