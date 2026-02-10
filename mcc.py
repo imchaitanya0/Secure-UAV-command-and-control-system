@@ -113,10 +113,26 @@ class MCCServer:
                     
                     for did, data in self.fleet.items():
                         try:
-                            # Test if socket is still alive
-                            data['socket'].getpeername()
-                            data['status'] = 'ACTIVE'
-                            active_count += 1
+                            # Send a zero-byte peek to detect closed sockets
+                            data['socket'].setblocking(False)
+                            try:
+                                chunk = data['socket'].recv(1, socket.MSG_PEEK)
+                                if chunk:
+                                    data['status'] = 'ACTIVE'
+                                    active_count += 1
+                                else:
+                                    # recv returned b'' → remote closed
+                                    data['status'] = 'DISCONNECTED'
+                                    dead_drones.append(did)
+                            except BlockingIOError:
+                                # No data available but socket still open → alive
+                                data['status'] = 'ACTIVE'
+                                active_count += 1
+                            except (ConnectionResetError, BrokenPipeError, OSError):
+                                data['status'] = 'DISCONNECTED'
+                                dead_drones.append(did)
+                            finally:
+                                data['socket'].setblocking(True)
                         except:
                             data['status'] = 'DISCONNECTED'
                             dead_drones.append(did)
@@ -126,13 +142,12 @@ class MCCServer:
                         status_marker = "✓" if data['status'] == 'ACTIVE' else "✗"
                         print(f" {status_marker} {did} [{data['status']}]")
                     
-                    # Optionally auto-remove disconnected drones
+                    # Auto-remove disconnected drones
                     if dead_drones:
                         print(f"\n[!] Found {len(dead_drones)} disconnected drone(s).")
-                        # Uncomment next lines to auto-remove:
-                        # for did in dead_drones:
-                        #     del self.fleet[did]
-                        # print(f"[*] Removed disconnected drones.")
+                        for did in dead_drones:
+                            del self.fleet[did]
+                        print(f"[*] Removed disconnected drones.")
             
             elif cmd == 'broadcast':
                 if len(parts) < 2:
@@ -309,8 +324,17 @@ class MCCServer:
             dead_drones = []
             for did, drone_data in self.fleet.items():
                 try:
-                    # Test if socket is still alive
-                    drone_data['socket'].getpeername()
+                    drone_data['socket'].setblocking(False)
+                    try:
+                        chunk = drone_data['socket'].recv(1, socket.MSG_PEEK)
+                        if not chunk:
+                            dead_drones.append(did)
+                    except BlockingIOError:
+                        pass  # No data but socket alive
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        dead_drones.append(did)
+                    finally:
+                        drone_data['socket'].setblocking(True)
                 except:
                     dead_drones.append(did)
             

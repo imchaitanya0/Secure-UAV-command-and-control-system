@@ -1,356 +1,164 @@
 # Secure UAV Command and Control System
 
-## Overview
-
-This project implements a secure, distributed UAV Command-and-Control (C2) system with manual ElGamal cryptography, mutual authentication, session management, and group key aggregation for fleet-wide secure broadcasting.
-
-## System Components
-
-- **MCC (Mission Control Center)**: Central server that manages multiple drones
-- **Drone Clients**: UAV agents that authenticate and receive encrypted commands
-- **Crypto Utilities**: Manual implementation of ElGamal and modular arithmetic
-- **Attack Tools**: Demonstration of security vulnerabilities and defenses
+A cryptographically secure UAV fleet management system implementing manual ElGamal encryption, digital signatures, and authenticated key distribution with comprehensive attack demonstrations.
 
 ## Features
 
-### Manual Cryptographic Implementation
-- **Modular Exponentiation**: Square-and-multiply algorithm for efficient computation
-- **Extended Euclidean Algorithm**: Iterative implementation for 2048-bit numbers
-- **ElGamal Encryption/Decryption**: Full manual implementation
-- **ElGamal Digital Signatures**: Manual signing and verification
-- **No High-Level Crypto Libraries**: Only uses primitives (AES-CBC, SHA-256, HMAC)
+- **Manual Cryptography**: Custom implementation of modular arithmetic, ElGamal encryption/signing, and HMAC/AES
+- **Secure Authentication**: Multi-phase mutual authentication with timestamp and nonce validation
+- **Group Key Management**: Dynamic group key distribution with forward/backward secrecy
+- **Authorization Policy**: Drone ID validation (only IDs 1-20 allowed)
+- **Concurrent Operations**: Thread-safe MCC server handling multiple drones simultaneously
+- **Attack Detection**: Replay attack prevention, timestamp freshness checks, signature verification
 
-### Security Features
-- **Mutual Authentication**: Both MCC and drones verify each other's identities
-- **Replay Attack Protection**: Timestamp freshness checking + nonce caching
-- **Session Key Derivation**: Unique session keys per drone
-- **Group Key Aggregation**: Fleet-wide secure broadcasting
-- **Digital Signatures**: All protocol messages are signed and verified
+## Architecture
 
-### Protocol Phases
-1. **Phase 0**: Parameter initialization (p, g, SL)
-2. **Phase 1**: Mutual authentication with ElGamal encryption and signatures
-3. **Phase 2**: Session key establishment with HMAC confirmation
-4. **Phase 3**: Group key distribution for broadcast commands
+### Components
+
+1. **MCC (Mission Control Center)** - `mcc.py`
+   - Concurrent server handling drone authentication and commands
+   - ElGamal keypair generation and parameter distribution
+   - Group key management and broadcast capabilities
+   - Real-time fleet monitoring with connection status detection
+
+2. **Drone Client** - `drone.py`
+   - Multi-phase authentication protocol
+   - Secure command reception via HMAC-authenticated AES
+   - Parameter validation and signature verification
+   - Graceful handling of authorization failures
+
+3. **Crypto Utilities** - `crypto_utils.py`
+   - Manual modular exponentiation (square-and-multiply)
+   - ElGamal encryption/decryption and signing/verification
+   - HMAC-SHA256 and AES-256-GCM wrappers
+   - RFC 3526 safe prime parameters (2048-bit)
+   - Performance benchmarking utilities
+
+4. **Attack Demonstrations** - `attacks.py`
+   - Replay attack simulation
+   - MitM parameter tampering
+   - Unauthorized access (ID-based and crypto-based)
+   - Interactive packet manipulation tool
 
 ## Installation
 
-### Prerequisites
-- Python 3.8 or higher
-- pip package manager
-
-### Setup
-
 ```bash
-# Clone or navigate to the project directory
-cd Secure-UAV-command-and-control-system
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Dependencies
-```
-cryptography==46.0.4  # Used ONLY for AES-CBC primitive
-```
+**Dependencies**: `cryptography` (for AES-GCM only; all ElGamal/modular math is manual)
 
 ## Usage
 
-### 1. Start the MCC Server
-
-**Standard Operation (Secure - 2048-bit):**
-```bash
-python3 mcc.py
-```
-
-**Testing MitM Parameter Tampering (Weak Parameters - For Security Demonstration Only):**
-```bash
-# Generate 512-bit prime to test parameter validation
-python3 mcc.py 512
-
-# Generate 256-bit prime to simulate severe downgrade attack
-python3 mcc.py 256
-
-# Generate 1024-bit prime to test intermediate scenario
-python3 mcc.py 1024
-```
-
-The MCC will:
-- Generate ElGamal parameters with specified bit length (default 2048)
-- Display its public key (copy this for attack demonstrations)
-- Listen on port 65432
-- Provide a CLI interface for commands
-- **WARNING**: Non-standard security levels are for testing only and should not be used in production
-
-### 2. Connect Drones
-
-In separate terminals, launch drone clients:
+### Start MCC Server
 
 ```bash
-# Launch with custom ID
-python3 drone.py Drone_Alpha
-
-# Launch with random ID
-python3 drone.py
+python mcc.py
 ```
 
-Each drone will:
-- Connect to MCC at 127.0.0.1:65432
-- Perform mutual authentication
-- Establish a session key
-- Wait for commands
+Copy the displayed public key for use in `attacks.py` if testing attacks.
 
-### 3. MCC Commands
-
-Once drones are connected, use the MCC CLI:
-
-```
-MCC> list
-Active Drones: 2
- - Drone_Alpha [ACTIVE]
- - Drone_Beta [ACTIVE]
-
-MCC> broadcast MISSION_START
-[*] Broadcasting: 'MISSION_START' to 2 drones.
-[+] Broadcast Complete.
-
-MCC> shutdown
-[*] Shutting down MCC...
-```
-
-### 4. Attack Demonstrations
-
-#### Option A: Test Parameter Tampering with Live Drone Validation
-
-This demonstrates how drones detect and reject weak/tampered parameters in a real attack scenario.
-
-**Terminal 1 - Start MCC with Weak Parameters:**
-```bash
-# Simulate MitM attack with 512-bit prime
-python3 mcc.py 512
-
-# Output:
-# [!] WARNING: Using non-standard 512-bit prime for SECURITY TESTING ONLY.
-# [*] Actual prime bit length: 512 bits
-# [*] MCC Ready.
-```
-
-**Terminal 2 - Connect Drone (will detect and reject):**
-```bash
-python3 drone.py Drone_Test
-
-# Output will show parameter validation failure:
-# [!] SECURITY ALERT: Parameter Tampering Detected!
-# [!] Claimed SL: 2048, Actual p.bit_length(): 512
-# [!] Mismatch of 1536 bits - This is a MitM attack!
-# [!] ABORTING connection to untrusted MCC.
-```
-
-**What's Happening:**
-1. MCC sends weak (512-bit) parameters but claims SL=2048 (Phase 0)
-2. Drone validates: `p.bit_length() ≈ claimed SL`
-3. Drone detects: 512 ≠ 2048 → **REJECTS** and aborts
-4. This proves drone's cryptographic validation is working!
-
-#### Option B: Run the Attack Tool (Analytical Testing)
+### Connect Drones
 
 ```bash
-python3 attacks.py
+python drone.py <drone_id> <port>
+65432 -> original mcc
+65434 -> attacker
 ```
 
-Available attack scenarios:
-1. **Set MCC Public Key**: Configure target for attacks
-2. **Build/Craft Packet**: Create custom authentication packets
-3. **Send Packet**: Test replay attacks, timestamp validation
-4. **MitM Test**: Demonstrate parameter tampering detection (analytical)
-5. **Unauthorized Access**: Test unknown drone ID rejection
+Example: `python drone.py 5 port` (IDs must be integers 1-20)
 
-## Performance Benchmarks
+### MCC Commands
 
-### Modular Exponentiation (2048-bit)
+- `list` - Show all drones with live connection status (auto-removes disconnected)
+- `broadcast <message>` - Send encrypted command to all active drones (group key updated before each broadcast)
+- `shutdown` - Stop the MCC server
 
-Performance measurements for manual modular exponentiation with 2048-bit primes:
+### Run Attack Demonstrations
 
-| Metric | Time (ms) |
-|--------|-----------|
-| Average | 40.59 |
-| Minimum | 36.97 |
-| Maximum | 51.87 |
+```bash
+python attacks.py
+```
 
-**Test Configuration**:
-- Prime: RFC 3526 MODP Group 14 (2048-bit)
-- Generator: 2
-- Iterations: 10
-- Algorithm: Square-and-multiply
+Follow the interactive menu to:
+1. Configure target MCC public key
+2. Build custom authentication packets
+3. Test replay attacks (send same packet twice)
+4. Simulate MitM parameter downgrade
+5. Test unauthorized access scenarios
 
-**Performance Notes**:
-- Using RFC 3526 standardized prime for consistency and security
-- Iterative Extended GCD avoids Python recursion depth limits
-- All arithmetic operations use Python's built-in arbitrary precision integers
+## Security Protocol
 
-### Key Generation Performance
+### Phase 0: Parameter Distribution
+- MCC sends signed parameters (p, g, SL, timestamp, identity)
+- Drone verifies signature, timestamp freshness, and parameter validity
+- Enforces 2048-bit minimum security level
 
-| Operation | Average Time |
-|-----------|--------------|
-| ElGamal Key Generation | ~41 ms |
-| ElGamal Encryption | ~82 ms (2 exponentiations) |
-| ElGamal Decryption | ~41 ms (1 exponentiation + inverse) |
-| ElGamal Signing | ~50-100 ms (varies with k selection) |
-| ElGamal Verification | ~82 ms (2 exponentiations) |
+### Phase 1A: Authentication Request
+- Drone generates ephemeral session key K_Dm
+- Encrypts K_Dm with MCC public key
+- Signs packet with drone's private key
+- Includes timestamp and nonce for replay prevention
+
+### Phase 1B: Authentication Response
+- MCC validates drone ID authorization (1-20 only)
+- Checks timestamp freshness (30-second window)
+- Verifies signature and prevents nonce replay
+- Decrypts and echoes K_Dm back encrypted
+- Drone confirms successful mutual authentication
+
+### Phase 2: Group Key Distribution
+- MCC generates fresh group key before each broadcast
+- Encrypts group key with each drone's session key
+- HMAC authentication prevents tampering
+
+### Phase 3: Broadcast Commands
+- Commands encrypted with AES-256-GCM using group key
+- HMAC verification ensures message integrity
+- Disconnected drones immediately removed from fleet
+
+## Performance Logs
+
+- 512-bit Modular Exponentiation: 0.001341 seconds
+- 1024-bit Modular Exponentiation: 0.007145 seconds
+- 2048-bit Modular Exponentiation: 0.042458 seconds
+- 3072-bit Modular Exponentiation: 0.130984 seconds
+
+### Manual Modular Exponentiation
+- 2048-bit prime operations: TBD ms/operation
+- Comparison vs. Python built-in `pow()`: TBD
+
+### ElGamal Operations
+- Key generation: TBD ms
+- Encryption: TBD ms
+- Decryption: TBD ms
+- Signing: TBD ms
+- Verification: TBD ms
+
+### End-to-End Authentication
+- Phase 0-1B completion: TBD ms
+- Group key distribution per drone: TBD ms
+- Broadcast to N drones: TBD ms
+
+*(Run `crypto_utils.benchmark_all()` to generate performance data)*
 
 ## Project Structure
 
 ```
-Secure-UAV-command-and-control-system/
-├── crypto_utils.py      # Manual cryptographic primitives
+.
 ├── mcc.py              # Mission Control Center server
-├── drone.py            # Drone client implementation
-├── attacks.py          # Security testing and attack demonstrations
+├── drone.py            # UAV client implementation
+├── crypto_utils.py     # Manual cryptography primitives
+├── attacks.py          # Security testing & attack demonstrations
 ├── requirements.txt    # Python dependencies
-├── README.md          # This file
-└── SECURITY.md        # Security analysis and protocol explanation
+├── README.md           # This file
+└── SECURITY.md         # Security analysis and threat model
 ```
-
-## File Descriptions
-
-### crypto_utils.py
-Contains all manual cryptographic implementations:
-- `manual_mod_exp()`: Modular exponentiation
-- `extended_gcd()`: Extended Euclidean algorithm
-- `manual_mod_inverse()`: Modular inverse calculation
-- `elgamal_keygen()`: ElGamal key pair generation
-- `elgamal_encrypt()`: ElGamal encryption
-- `elgamal_decrypt()`: ElGamal decryption
-- `elgamal_sign()`: ElGamal digital signature
-- `elgamal_verify()`: Signature verification
-- `derive_session_key()`: Session key derivation
-- `aes_encrypt()` / `aes_decrypt()`: AES-256-CBC wrappers
-- `compute_hmac()`: HMAC-SHA256 wrapper
-- `benchmark_mod_exp()`: Performance benchmarking
-
-### mcc.py
-Mission Control Center server implementation:
-- Multi-threaded drone handling
-- Thread-safe fleet registry
-- CLI interface for operator commands
-- Phase 0-3 protocol implementation
-- Replay attack detection
-- Group key aggregation and distribution
-
-### drone.py
-Drone client implementation:
-- Automatic connection to MCC
-- Parameter validation (security level checking)
-- Mutual authentication protocol
-- Session key derivation
-- Command reception and decryption
-
-### attacks.py
-Security testing tool:
-- Replay attack demonstration
-- Timestamp freshness testing
-- Wrong public key testing
-- MitM parameter tampering
-- Unauthorized drone access attempts
-
-## Protocol Opcodes
-
-| Opcode | Name | Description |
-|--------|------|-------------|
-| 10 | PARAM_INIT | Phase 0: Crypto parameters and MCC signature |
-| 20 | AUTH_REQ | Phase 1A: Drone authentication packet |
-| 30 | AUTH_RES | Phase 1B: MCC proof of decryption |
-| 40 | SK_CONFIRM | Phase 2: Session key verification (HMAC) |
-| 50 | SUCCESS | Handshake complete |
-| 60 | ERR_MISMATCH | Key or HMAC verification failed |
-| 70 | GROUP_KEY | Phase 3: Distribution of group key |
-| 80 | GROUP_CMD | Secure broadcast (encrypted via GK) |
-| 90 | SHUTDOWN | Close all drone connections |
-
-## Security Considerations
-
-See [SECURITY.md](SECURITY.md) for detailed security analysis including:
-- Freshness guarantees (timestamp + nonce mechanism)
-- Forward secrecy properties
-- Replay attack prevention
-- Man-in-the-Middle attack resistance
 
 ## Testing
 
-### Basic Functionality Test
-
-1. Start MCC: `python3 mcc.py`
-2. Connect 2-3 drones in separate terminals
-3. Use `list` command to verify connections
-4. Use `broadcast` to send commands
-5. Verify drones receive and decrypt commands
-
-### Security Testing
-
-1. Run `python3 attacks.py`
-2. Copy MCC public key from MCC terminal
-3. Test replay attack by sending same packet twice
-4. Test timestamp validation with old timestamps
-5. Test parameter tampering with weak primes
-
-### Expected Behavior
-
-**Successful Authentication**:
-- Drone connects and completes all 3 phases
-- MCC shows "[+] Drone X Authenticated Successfully"
-- Drone shows "[+] Session Established"
-
-**Replay Attack Detected**:
-- MCC shows "[!] SECURITY ALERT: Replay Attack Detected!"
-- Connection immediately closed
-
-**Stale Timestamp**:
-- MCC shows "[!] SECURITY ALERT: Stale Timestamp"
-- Connection immediately closed
-
-## Troubleshooting
-
-### Connection Refused
-- Ensure MCC is running before starting drones
-- Check that port 65432 is not in use
-- Verify firewall settings
-
-### Signature Verification Failed
-- Ensure parameters (p, g) match between MCC and drone
-- Check that public keys are correctly exchanged
-- Verify message format matches signature computation
-
-### HMAC Mismatch
-- Ensure session key derivation uses same parameters
-- Check timestamp synchronization
-- Verify nonce values match
-
-## Implementation Notes
-
-### Why RFC 3526 MODP Group 14?
-Instead of generating a random 2048-bit prime (which takes several minutes), we use the standardized RFC 3526 MODP Group 14 prime. This is:
-- Cryptographically secure (widely vetted)
-- Faster (no prime generation delay)
-- Consistent across runs
-- Industry standard for Diffie-Hellman
-
-### Iterative vs Recursive Extended GCD
-Python has a default recursion limit of ~1000. With 2048-bit numbers, recursive Extended GCD causes stack overflow. Our iterative implementation handles arbitrary-sized integers.
-
-### Thread Safety
-The MCC uses a threading lock (`self.lock`) to protect the fleet registry from race conditions when multiple drones connect simultaneously.
-
-## License
-
-This is an academic project for the System and Network Security course (CS8.403) at IIIT Hyderabad.
-
-## Authors
-
-Lab Assignment 2 - Secure UAV Command and Control System
-
-## References
-
-- RFC 3526: More Modular Exponential (MODP) Diffie-Hellman groups
-- ElGamal Encryption and Signature Schemes
-- NIST FIPS 180-4: Secure Hash Standard (SHA-256)
-- NIST FIPS 198-1: The Keyed-Hash Message Authentication Code (HMAC)
+1. **Normal Operation**: Start MCC → Connect 2-3 drones → Test `list` and `broadcast` commands
+2. **Authorization**: Try drone IDs outside 1-20 range (should be rejected)
+3. **Replay Attack**: Run `attacks.py` → Send same packet twice (second fails)
+4. **MitM Detection**: Run weak parameter attack (drone rejects <2048-bit)
+5. **Connection Handling**: Kill drone process → Run `list` (auto-removed)
