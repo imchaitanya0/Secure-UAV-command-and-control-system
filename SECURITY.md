@@ -146,26 +146,11 @@
 
 ## Security Best Practices Followed
 
-✅ **Defense in Depth**: Multiple layers (authorization, crypto, MAC, timestamps)  
-✅ **Principle of Least Privilege**: Drones only receive commands, cannot issue them  
-✅ **Fail Securely**: Invalid packets rejected; no fallback to weak crypto  
-✅ **Secure Defaults**: 2048-bit prime enforced; weak parameters rejected  
-✅ **Input Validation**: All received fields validated before processing  
-✅ **Constant-Time Comparisons**: HMAC verification uses timing-safe compare  
-✅ **Cryptographic Agility**: Easy to upgrade primitives (parameter swapping)  
+ **Defense in Depth**: Multiple layers (authorization, crypto, MAC, timestamps)  
+ **Principle of Least Privilege**: Drones only receive commands, cannot issue them  
+ **Fail Securely**: Invalid packets rejected; no fallback to weak crypto  
+ **Secure Defaults**: 2048-bit prime enforced; weak parameters rejected  
+ **Input Validation**: All received fields validated before processing  
+ **Constant-Time Comparisons**: HMAC verification uses timing-safe compare  
+ **Cryptographic Agility**: Easy to upgrade primitives (parameter swapping)  
 
-## Compliance
-
-This implementation demonstrates academic understanding of:
-- Public-key cryptography (ElGamal)
-- Symmetric encryption (AES-GCM)
-- Message authentication (HMAC)
-- Secure protocol design
-- Attack detection and mitigation
-
-**Note**: This is a demonstration system for educational purposes. Production deployment would require additional hardening:
-- Certificate-based key distribution
-- Hardware security modules (HSMs) for private keys
-- Rate limiting and DoS protection
-- Comprehensive logging and intrusion detection
-- Regular security audits and penetration testing

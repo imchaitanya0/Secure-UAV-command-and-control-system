@@ -120,28 +120,7 @@ Follow the interactive menu to:
 
 ## Performance Logs
 
-- 512-bit Modular Exponentiation: 0.001341 seconds
-- 1024-bit Modular Exponentiation: 0.007145 seconds
-- 2048-bit Modular Exponentiation: 0.042458 seconds
-- 3072-bit Modular Exponentiation: 0.130984 seconds
-
-### Manual Modular Exponentiation
-- 2048-bit prime operations: TBD ms/operation
-- Comparison vs. Python built-in `pow()`: TBD
-
-### ElGamal Operations
-- Key generation: TBD ms
-- Encryption: TBD ms
-- Decryption: TBD ms
-- Signing: TBD ms
-- Verification: TBD ms
-
-### End-to-End Authentication
-- Phase 0-1B completion: TBD ms
-- Group key distribution per drone: TBD ms
-- Broadcast to N drones: TBD ms
-
-*(Run `crypto_utils.benchmark_all()` to generate performance data)*
+- 2048-bit Modular Exponentiation: 23.5 ms
 
 ## Project Structure
 
@@ -162,4 +141,3 @@ Follow the interactive menu to:
 2. **Authorization**: Try drone IDs outside 1-20 range (should be rejected)
 3. **Replay Attack**: Run `attacks.py` → Send same packet twice (second fails)
 4. **MitM Detection**: Run weak parameter attack (drone rejects <2048-bit)
-5. **Connection Handling**: Kill drone process → Run `list` (auto-removed)
