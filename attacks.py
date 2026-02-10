@@ -191,16 +191,24 @@ class ManualAttackTool:
         3.3 Unauthorized Access Attack Demo
 
         Demonstrates that an attacker WITHOUT valid ElGamal credentials
-        cannot authenticate with the MCC. Three sub-scenarios are tested:
-          1. Random Signature Attack   — random r, s values
-          2. Wrong Key Pair Attack     — sign with key A, send pub key B
-          3. Zero/Malformed Signature  — r=0, s=0 (boundary check)
+        cannot authenticate with the MCC, AND that drones with unauthorized
+        IDs (outside 1-20) are rejected even with valid crypto.
+
+        ID-based authorization (checked FIRST by MCC):
+          4. Unauthorized Drone ID       — valid crypto, but ID outside 1-20
+          5. Boundary ID Cases           — test edges: 0, 1, 20, 21
+          6. Invalid ID Formats          — non-integer IDs: "abc", "", "-5"
+
+        Crypto-based attacks (checked AFTER ID authorization):
+          1. Random Signature Attack     — random r, s values
+          2. Wrong Key Pair Attack       — sign with key A, send pub key B
+          3. Zero/Malformed Signature    — r=0, s=0 (boundary check)
         """
         print("\n" + "=" * 60)
         print("   3.3 UNAUTHORIZED ACCESS ATTACK DEMO")
         print("=" * 60)
-        print("Attack : Unknown drone attempts to connect without valid credentials.")
-        print("Defense: ElGamal signature verification rejects invalid signatures.")
+        print("Defense Layer 1: Drone ID must be an integer in range 1-20")
+        print("Defense Layer 2: ElGamal signature verification")
         print()
 
         if not self.mcc_pub_key:
@@ -208,22 +216,26 @@ class ManualAttackTool:
             return
 
         print("Select attack sub-scenario:")
+        print()
+        print("  --- ID Authorization Attacks (checked FIRST) ---")
+        print("  4. Unauthorized Drone IDs    (valid crypto, ID outside 1-20)")
+        print("  5. Boundary ID Cases         (0, 1, 20, 21)")
+        print("  6. Invalid ID Formats        (non-integer IDs)")
+        print()
+        print("  --- Crypto Attacks (checked AFTER ID auth) ---")
         print("  1. Random Signature Attack   (random r, s — no valid key pair)")
         print("  2. Wrong Key Pair Attack     (sign with key A, send pub key B)")
         print("  3. Zero/Malformed Signature  (r=0, s=0 — boundary violation)")
-        print("  4. Run ALL scenarios")
+        print()
+        print("  7. Run ALL scenarios")
 
-        choice = input("\nSelect (1-4): ").strip()
+        choice = input("\nSelect (1-7): ").strip()
 
         scenarios = []
-        if choice == '1':
-            scenarios = [1]
-        elif choice == '2':
-            scenarios = [2]
-        elif choice == '3':
-            scenarios = [3]
-        elif choice == '4':
-            scenarios = [1, 2, 3]
+        if choice in ['1','2','3','4','5','6']:
+            scenarios = [int(choice)]
+        elif choice == '7':
+            scenarios = [4, 5, 6, 1, 2, 3]
         else:
             print("[!] Invalid choice.")
             return
@@ -235,6 +247,12 @@ class ManualAttackTool:
                 self._attack_wrong_keypair()
             elif sc == 3:
                 self._attack_zero_signature()
+            elif sc == 4:
+                self._attack_unauthorized_ids()
+            elif sc == 5:
+                self._attack_boundary_ids()
+            elif sc == 6:
+                self._attack_invalid_id_formats()
 
         print("\n" + "=" * 60)
         print("   DEMO COMPLETE")
@@ -358,7 +376,113 @@ class ManualAttackTool:
         self._send_attack_packet(packet, "Zero/Malformed Signature")
 
     # ------------------------------------------------------------------
-    # Helper: send attack packet and interpret result
+    # Sub-scenario 4: Unauthorized Drone IDs (valid crypto, bad ID)
+    # ------------------------------------------------------------------
+    def _attack_unauthorized_ids(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 4: UNAUTHORIZED DRONE IDs")
+        print("-" * 60)
+        print("[*] Attacker sends VALID crypto but uses drone IDs outside 1-20.")
+        print("[*] MCC checks ID authorization BEFORE verifying signatures.")
+        print("[*] Policy: Only integer IDs 1-20 are authorized.\n")
+
+        unauthorized_ids = ["25", "55", "100", "999", "0", "-1"]
+
+        for uid in unauthorized_ids:
+            print(f"  ── Testing drone ID = {uid} (UNAUTHORIZED) ──")
+            self._send_id_attack_packet(uid, f"Unauthorized ID {uid}")
+
+    # ------------------------------------------------------------------
+    # Sub-scenario 5: Boundary ID Cases
+    # ------------------------------------------------------------------
+    def _attack_boundary_ids(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 5: BOUNDARY ID CASES")
+        print("-" * 60)
+        print("[*] Testing edge cases around the authorized range (1-20).\n")
+
+        test_cases = [
+            ("0",  "REJECT  — below minimum"),
+            ("1",  "ACCEPT  — minimum authorized"),
+            ("10", "ACCEPT  — middle of range"),
+            ("20", "ACCEPT  — maximum authorized"),
+            ("21", "REJECT  — above maximum"),
+        ]
+
+        for drone_id, description in test_cases:
+            print(f"  ── Testing drone ID = {drone_id}  →  Expected: {description} ──")
+            self._send_id_attack_packet(drone_id, f"Boundary ID {drone_id}")
+
+    # ------------------------------------------------------------------
+    # Sub-scenario 6: Invalid ID Formats (non-integer)
+    # ------------------------------------------------------------------
+    def _attack_invalid_id_formats(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 6: INVALID ID FORMATS")
+        print("-" * 60)
+        print("[*] Drone ID must be an integer.  Non-integer values must be rejected.\n")
+
+        invalid_ids = ["abc", "drone1", "1.5", "", "null", "0x10", "ROGUE"]
+
+        for uid in invalid_ids:
+            label = uid if uid else "<empty>"
+            print(f"  ── Testing drone ID = '{label}' (INVALID FORMAT) ──")
+            self._send_id_attack_packet(uid, f"Invalid Format '{label}'")
+
+    # ------------------------------------------------------------------
+    # Helper: build a packet with VALID crypto for a given drone_id
+    #         and send it to the MCC to test ID authorization
+    # ------------------------------------------------------------------
+    def _send_id_attack_packet(self, drone_id, test_name):
+        """Send a fully valid crypto packet but with the given drone_id."""
+        priv, pub = cu.elgamal_keygen(self.p, self.g)
+        ts = int(time.time())
+        rn = secrets.randbelow(2**256)
+        secret = secrets.randbelow(self.p - 1) + 1
+        c1, c2 = cu.elgamal_encrypt(secret, self.p, self.g, self.mcc_pub_key)
+
+        sig_msg = f"{ts}{rn}{drone_id}{c1}{c2}".encode()
+        r, s = cu.elgamal_sign(sig_msg, priv, self.p, self.g)   # VALID signature
+
+        packet = {
+            'drone_id': drone_id, 'ts': ts, 'rn': rn,
+            'c1': c1, 'c2': c2, 'r': r, 's': s, 'pub_key': pub
+        }
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((TARGET_IP, TARGET_PORT))
+
+            self.recv_json(sock)                                     # Phase 0
+            self.send_json(sock, {'opcode': 20, 'payload': packet})  # Phase 1A
+
+            resp = self.recv_json(sock)
+            sock.close()
+
+            if resp and resp.get('opcode') == 30:
+                print(f"     ✅ ACCEPTED — drone ID {drone_id} is within authorized range (1-20)")
+            elif resp and resp.get('opcode') == 60:
+                payload = resp.get('payload', {})
+                if isinstance(payload, dict):
+                    err  = payload.get('error', 'Unknown')
+                    msg  = payload.get('message', '')
+                    print(f"     ❌ REJECTED — {err}: {msg}")
+                else:
+                    print(f"     ❌ REJECTED — {payload}")
+            else:
+                print(f"     ❌ REJECTED — connection closed by MCC")
+
+        except (ConnectionResetError, BrokenPipeError):
+            print(f"     ❌ REJECTED — MCC closed the connection immediately")
+        except socket.timeout:
+            print(f"     ❌ REJECTED — no response (MCC dropped connection)")
+        except Exception as e:
+            print(f"     [!] Error during {test_name}: {e}")
+        print()
+
+    # ------------------------------------------------------------------
+    # Helper: send attack packet and interpret result (crypto attacks)
     # ------------------------------------------------------------------
     def _send_attack_packet(self, packet, attack_name):
         print(f"\n[*] Sending forged Phase 1A packet to MCC ({TARGET_IP}:{TARGET_PORT})...")

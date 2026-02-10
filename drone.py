@@ -150,6 +150,18 @@ class DroneClient:
         # --- PHASE 1B: RECEIVE RESPONSE ---
         msg = self.recv_json()
         if not msg: return
+
+        # Check if MCC rejected us (opcode 60 = error/unauthorized)
+        if msg.get('opcode') == 60:
+            payload = msg.get('payload', {})
+            if isinstance(payload, dict):
+                err = payload.get('error', 'Unknown')
+                detail = payload.get('message', 'No details provided')
+                print(f"[!] ❌ MCC REJECTED CONNECTION: {err}")
+                print(f"    → {detail}")
+            else:
+                print(f"[!] ❌ MCC REJECTED CONNECTION: {payload}")
+            return
         
         resp = msg['payload']
         ts_mcc, rn_mcc = resp['ts'], resp['rn']

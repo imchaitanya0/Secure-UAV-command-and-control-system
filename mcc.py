@@ -54,6 +54,11 @@ class MCCServer:
         self.lock = threading.Lock()
         self.running = True
 
+        # AUTHORIZATION POLICY: Only integer drone IDs 1-20 are allowed
+        self.min_authorized_id = 1
+        self.max_authorized_id = 20
+
+        print(f"[*] Authorized drone ID range: {self.min_authorized_id}-{self.max_authorized_id} (integers only)")
         print(f"[*] MCC Ready.")
         print("-" * 60)
         print("COPY THIS PUBLIC KEY FOR ATTACKS.PY:")
@@ -190,6 +195,41 @@ class MCCServer:
             c1, c2 = payload['c1'], payload['c2'] 
             sig_r, sig_s = payload['r'], payload['s']
             drone_pub_key = payload['pub_key']
+
+            # --- AUTHORIZATION CHECK (must pass before any crypto) ---
+            # Drone ID must be an integer in range [1, 20]
+            try:
+                drone_id_int = int(drone_id)
+                if not (self.min_authorized_id <= drone_id_int <= self.max_authorized_id):
+                    print(f"[!] SECURITY ALERT: Unauthorized drone ID {drone_id} "
+                          f"(outside range {self.min_authorized_id}-{self.max_authorized_id}). "
+                          f"Connection rejected.")
+                    self.send_json(conn, {
+                        'opcode': 60,
+                        'payload': {
+                            'error': 'UNAUTHORIZED_ID',
+                            'message': f'Drone ID {drone_id} is not authorized. '
+                                       f'Only IDs {self.min_authorized_id}-{self.max_authorized_id} are allowed.'
+                        }
+                    })
+                    conn.close()
+                    return
+            except (ValueError, TypeError):
+                print(f"[!] SECURITY ALERT: Invalid drone ID format '{drone_id}' "
+                      f"(must be an integer {self.min_authorized_id}-{self.max_authorized_id}). "
+                      f"Connection rejected.")
+                self.send_json(conn, {
+                    'opcode': 60,
+                    'payload': {
+                        'error': 'INVALID_ID_FORMAT',
+                        'message': f'Drone ID must be an integer in range '
+                                   f'{self.min_authorized_id}-{self.max_authorized_id}. Got: {drone_id}'
+                    }
+                })
+                conn.close()
+                return
+
+            print(f"[*] Drone ID {drone_id} is authorized (range {self.min_authorized_id}-{self.max_authorized_id})")
 
             # --- SECURITY CHECKS (Freshness & Replay) ---
             # 1. Check Timestamp Window (e.g., 60 seconds)
