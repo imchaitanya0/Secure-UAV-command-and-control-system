@@ -228,9 +228,11 @@ class DroneClient:
                 
                 if not hmac.compare_digest(received_hmac, expected_hmac):
                     print("[!] 🚨 SECURITY ALERT: Broadcast HMAC verification FAILED!")
-                    print("    Command integrity compromised - possible MitM attack!")
-                    print("    Refusing to execute tampered broadcast command.")
-                    continue
+                    print("    Command integrity compromised - possible MitM attack detected!")
+                    print("    CRITICAL SECURITY BREACH - Initiating emergency shutdown...")
+                    print("    Disconnecting from MCC immediately for safety.")
+                    self.running = False
+                    break
                 
                 # HMAC verified, safe to decrypt and execute
                 try:

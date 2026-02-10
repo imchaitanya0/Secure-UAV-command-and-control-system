@@ -10,6 +10,7 @@ A cryptographically secure UAV fleet management system implementing manual ElGam
 - **Authorization Policy**: Drone ID validation (only IDs 1-20 allowed)
 - **Concurrent Operations**: Thread-safe MCC server handling multiple drones simultaneously
 - **Attack Detection**: Replay attack prevention, timestamp freshness checks, signature verification
+- **Fail-Secure Design**: Emergency shutdown on integrity violations (HMAC failures)
 
 ## Architecture
 

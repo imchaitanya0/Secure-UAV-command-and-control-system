@@ -815,7 +815,8 @@ class ManualAttackTool:
         print("2. Drones connect to proxy instead of real MCC")
         print("3. Proxy forwards Phase 0, 1A, 1B, 2 normally")
         print("4. When MCC broadcasts, proxy tampers with message")
-        print("5. Drones receive tampered broadcast content")
+        print("5. Drones detect HMAC verification failure")
+        print("6. Drones initiate emergency shutdown and disconnect")
         print()
         
         choice = input("1. Start Broadcast MitM Proxy\n2. Cancel\nSelect: ").strip()
@@ -1059,8 +1060,11 @@ class ManualAttackTool:
         
         print(f"   🔥 ATTACK: Original command replaced with malicious content")
         print(f"   🔥 ATTACK: Original HMAC replaced with fake HMAC")
-        print(f"   Expected Result: Drone will receive tampered broadcast")
-        print(f"   Security Note: Drone should detect HMAC verification failure")
+        print(f"   Expected Result:")
+        print(f"      → Drone receives tampered broadcast")
+        print(f"      → HMAC verification fails")
+        print(f"      → Drone initiates emergency shutdown")
+        print(f"      → Drone disconnects from MCC immediately")
         
         return tampered_msg
 
@@ -1088,8 +1092,8 @@ class ManualAttackTool:
             print("1. Set MCC Public Key (Manual Entry)")
             print("2. Build/Craft Packet (Generates Fresh Nonce)")
             print("3. SEND Current Packet")
-            print("4. MitM Parameter Tampering Test")
-            print("5. Unauthorized Drone Access Test")
+            # print("4. MitM Parameter Tampering Test")
+            # print("5. Unauthorized Drone Access Test")
             print("6. Phase 0 MitM Attack")
             print("7. Broadcast MitM Attack")
             print("8. Exit")

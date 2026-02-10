@@ -30,6 +30,7 @@
 - **Digital Signatures**: ElGamal signatures on Phase 0/1A prevent parameter/packet tampering
 - **HMAC Verification**: All encrypted payloads include MAC; modified messages rejected
 - **AES-GCM**: Provides both encryption and authentication (AEAD)
+- **Emergency Shutdown**: Drones detect HMAC failure and immediately disconnect (fail-secure design)
 
 ### Freshness
 - **Timestamps**: All authentication messages include Unix timestamp; 30-second validity window
@@ -58,6 +59,19 @@
 - Public key exchange signed; attacker cannot substitute keys
 
 **Demonstration**: `attacks.py` → MitM test → Send weak parameters → Drone rejects
+
+### Broadcast Tampering
+**Mitigation**:
+- All broadcast commands protected by HMAC-SHA256
+- Drone verifies HMAC before decrypting/executing command
+- **Fail-Secure Response**: On HMAC verification failure:
+  - Drone logs critical security alert
+  - Drone initiates emergency shutdown
+  - Drone disconnects from MCC immediately
+  - No tampered command execution
+- Prevents attacker from injecting malicious commands even with network control
+
+**Demonstration**: `attacks.py` → Broadcast MitM Attack → Proxy tampers with broadcast → Drone detects and shuts down
 
 ### Unauthorized Access
 **Mitigation**:
