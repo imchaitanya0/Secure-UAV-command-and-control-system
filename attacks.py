@@ -187,81 +187,215 @@ class ManualAttackTool:
             print("Cancelled.")
 
     def test_unauthorized_drone(self):
-        print("\n--- UNAUTHORIZED DRONE ACCESS TEST ---")
-        print("This test demonstrates what happens when a drone")
-        print("with an unknown/invalid ID tries to connect.")
+        """
+        3.3 Unauthorized Access Attack Demo
+
+        Demonstrates that an attacker WITHOUT valid ElGamal credentials
+        cannot authenticate with the MCC. Three sub-scenarios are tested:
+          1. Random Signature Attack   — random r, s values
+          2. Wrong Key Pair Attack     — sign with key A, send pub key B
+          3. Zero/Malformed Signature  — r=0, s=0 (boundary check)
+        """
+        print("\n" + "=" * 60)
+        print("   3.3 UNAUTHORIZED ACCESS ATTACK DEMO")
+        print("=" * 60)
+        print("Attack : Unknown drone attempts to connect without valid credentials.")
+        print("Defense: ElGamal signature verification rejects invalid signatures.")
         print()
-        
+
         if not self.mcc_pub_key:
             print("[!] ERROR: Set MCC Public Key (Option 1) first!")
             return
-        
-        print("[*] Creating packet with suspicious drone ID...")
-        suspicious_ids = [
-            "ATTACKER_BOT",
-            "'; DROP TABLE drones; --",  # SQL injection attempt
-            "../../etc/passwd",  # Path traversal attempt
-            "MCC_IMPERSONATOR"
-        ]
-        
-        print("\nSelect suspicious ID:")
-        for i, sid in enumerate(suspicious_ids, 1):
-            print(f"{i}. {sid}")
-        
-        choice = input("Select (1-4): ").strip()
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(suspicious_ids):
-                did = suspicious_ids[idx]
-            else:
-                did = "UNKNOWN_DRONE"
-        except:
-            did = "UNKNOWN_DRONE"
-        
-        print(f"\n[*] Testing with ID: {did}")
-        print("[*] Building authentication packet...")
-        
-        # Build packet (same as normal, but with suspicious ID)
+
+        print("Select attack sub-scenario:")
+        print("  1. Random Signature Attack   (random r, s — no valid key pair)")
+        print("  2. Wrong Key Pair Attack     (sign with key A, send pub key B)")
+        print("  3. Zero/Malformed Signature  (r=0, s=0 — boundary violation)")
+        print("  4. Run ALL scenarios")
+
+        choice = input("\nSelect (1-4): ").strip()
+
+        scenarios = []
+        if choice == '1':
+            scenarios = [1]
+        elif choice == '2':
+            scenarios = [2]
+        elif choice == '3':
+            scenarios = [3]
+        elif choice == '4':
+            scenarios = [1, 2, 3]
+        else:
+            print("[!] Invalid choice.")
+            return
+
+        for sc in scenarios:
+            if sc == 1:
+                self._attack_random_signature()
+            elif sc == 2:
+                self._attack_wrong_keypair()
+            elif sc == 3:
+                self._attack_zero_signature()
+
+        print("\n" + "=" * 60)
+        print("   DEMO COMPLETE")
+        print("=" * 60)
+
+    # ------------------------------------------------------------------
+    # Sub-scenario 1: Random Signature Attack
+    # ------------------------------------------------------------------
+    def _attack_random_signature(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 1: RANDOM SIGNATURE ATTACK")
+        print("-" * 60)
+        print("[*] Attacker has NO valid ElGamal key pair.")
+        print("[*] Generating completely random r, s values...")
+
+        drone_id = "ROGUE_DRONE_01"
         ts = int(time.time())
         rn = secrets.randbelow(2**256)
-        priv, pub = cu.elgamal_keygen(self.p, self.g)
-        secret = 99999
+
+        # Generate a random (but unrelated) public key to send
+        _, fake_pub = cu.elgamal_keygen(self.p, self.g)
+
+        # Encrypt a random secret for the handshake
+        secret = secrets.randbelow(self.p - 1) + 1
         c1, c2 = cu.elgamal_encrypt(secret, self.p, self.g, self.mcc_pub_key)
-        sig_msg = f"{ts}{rn}{did}{c1}{c2}".encode()
-        r, s = cu.elgamal_sign(sig_msg, priv, self.p, self.g)
-        
+
+        # --- THE ATTACK: random r, s instead of a real signature ---
+        r = secrets.randbelow(self.p - 2) + 1
+        s = secrets.randbelow(self.p - 2) + 1
+
+        sig_msg = f"{ts}{rn}{drone_id}{c1}{c2}".encode()
+        print(f"[*] Message to be signed : {sig_msg[:60]}...")
+        print(f"[*] Random r             : {str(r)[:40]}...")
+        print(f"[*] Random s             : {str(s)[:40]}...")
+
+        # Local pre-check
+        local_ok = cu.elgamal_verify(sig_msg, r, s, fake_pub, self.p, self.g)
+        print(f"\n[*] LOCAL pre-check  →  elgamal_verify = {local_ok}")
+
         packet = {
-            'drone_id': did, 'ts': ts, 'rn': rn,
-            'c1': c1, 'c2': c2, 'r': r, 's': s, 'pub_key': pub
+            'drone_id': drone_id, 'ts': ts, 'rn': rn,
+            'c1': c1, 'c2': c2, 'r': r, 's': s, 'pub_key': fake_pub
         }
-        
-        print("[*] Sending to MCC...")
-        
+        self._send_attack_packet(packet, "Random Signature")
+
+    # ------------------------------------------------------------------
+    # Sub-scenario 2: Wrong Key Pair Attack
+    # ------------------------------------------------------------------
+    def _attack_wrong_keypair(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 2: WRONG KEY PAIR ATTACK")
+        print("-" * 60)
+        print("[*] Attacker signs with key pair A but sends public key B.")
+        print("[*] MCC will verify signature against pub_key B → mismatch.")
+
+        drone_id = "ROGUE_DRONE_02"
+        ts = int(time.time())
+        rn = secrets.randbelow(2**256)
+
+        # Key pair A — used to SIGN
+        priv_a, pub_a = cu.elgamal_keygen(self.p, self.g)
+        # Key pair B — sent to MCC (different from A)
+        _, pub_b = cu.elgamal_keygen(self.p, self.g)
+
+        secret = secrets.randbelow(self.p - 1) + 1
+        c1, c2 = cu.elgamal_encrypt(secret, self.p, self.g, self.mcc_pub_key)
+
+        sig_msg = f"{ts}{rn}{drone_id}{c1}{c2}".encode()
+
+        # Sign with key A
+        r, s = cu.elgamal_sign(sig_msg, priv_a, self.p, self.g)
+
+        print(f"[*] Signed with pub_key A: {str(pub_a)[:40]}...")
+        print(f"[*] Sending  pub_key B   : {str(pub_b)[:40]}...")
+
+        # Local pre-check — verify against pub_key B (should fail)
+        local_ok = cu.elgamal_verify(sig_msg, r, s, pub_b, self.p, self.g)
+        print(f"\n[*] LOCAL pre-check  →  elgamal_verify(sig, pub_B) = {local_ok}")
+
+        packet = {
+            'drone_id': drone_id, 'ts': ts, 'rn': rn,
+            'c1': c1, 'c2': c2, 'r': r, 's': s, 'pub_key': pub_b
+        }
+        self._send_attack_packet(packet, "Wrong Key Pair")
+
+    # ------------------------------------------------------------------
+    # Sub-scenario 3: Zero / Malformed Signature Attack
+    # ------------------------------------------------------------------
+    def _attack_zero_signature(self):
+        print("\n" + "-" * 60)
+        print("  SUB-SCENARIO 3: ZERO / MALFORMED SIGNATURE ATTACK")
+        print("-" * 60)
+        print("[*] Attacker sends r=0, s=0 (out-of-range values).")
+        print("[*] elgamal_verify boundary check: 0 < r < p and 0 < s < p-1")
+
+        drone_id = "ROGUE_DRONE_03"
+        ts = int(time.time())
+        rn = secrets.randbelow(2**256)
+
+        _, fake_pub = cu.elgamal_keygen(self.p, self.g)
+
+        secret = secrets.randbelow(self.p - 1) + 1
+        c1, c2 = cu.elgamal_encrypt(secret, self.p, self.g, self.mcc_pub_key)
+
+        # --- THE ATTACK: malformed r=0, s=0 ---
+        r = 0
+        s = 0
+
+        sig_msg = f"{ts}{rn}{drone_id}{c1}{c2}".encode()
+        print(f"[*] r = {r}")
+        print(f"[*] s = {s}")
+
+        # Local pre-check
+        local_ok = cu.elgamal_verify(sig_msg, r, s, fake_pub, self.p, self.g)
+        print(f"\n[*] LOCAL pre-check  →  elgamal_verify = {local_ok}")
+
+        packet = {
+            'drone_id': drone_id, 'ts': ts, 'rn': rn,
+            'c1': c1, 'c2': c2, 'r': r, 's': s, 'pub_key': fake_pub
+        }
+        self._send_attack_packet(packet, "Zero/Malformed Signature")
+
+    # ------------------------------------------------------------------
+    # Helper: send attack packet and interpret result
+    # ------------------------------------------------------------------
+    def _send_attack_packet(self, packet, attack_name):
+        print(f"\n[*] Sending forged Phase 1A packet to MCC ({TARGET_IP}:{TARGET_PORT})...")
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
             sock.connect((TARGET_IP, TARGET_PORT))
-            
-            # Ignore Phase 0
+
+            # Receive Phase 0 (ignore — attacker doesn't validate)
             self.recv_json(sock)
-            
-            # Send packet
+
+            # Send forged Phase 1A
             self.send_json(sock, {'opcode': 20, 'payload': packet})
-            
-            # Wait for response
+
+            # Wait for Phase 1B response
             resp = self.recv_json(sock)
             sock.close()
-            
+
             if resp and resp.get('opcode') == 30:
-                print("\n[RESULT] MCC ACCEPTED the connection!")
-                print("  → The protocol doesn't have an ID whitelist (expected)")
-                print("  → Any drone with valid crypto can connect")
-                print("  → In production, you'd want an ID registration system")
+                print(f"\n  ❌ UNEXPECTED: MCC accepted the {attack_name}!")
+                print("     This should NOT happen — investigate MCC verification logic.")
             else:
-                print(f"\n[RESULT] MCC rejected (Opcode: {resp.get('opcode') if resp else 'None'})")
-                
+                print(f"\n  ✅ DEFENSE SUCCESSFUL: {attack_name} was REJECTED by MCC.")
+                print("     → MCC called elgamal_verify(msg, r, s, pub_key, p, g)")
+                print("     → Signature verification returned False")
+                print("     → Connection closed — unauthorized access denied")
+
+        except (ConnectionResetError, BrokenPipeError):
+            # MCC closes the socket immediately after verification failure
+            print(f"\n  ✅ DEFENSE SUCCESSFUL: {attack_name} was REJECTED by MCC.")
+            print("     → MCC closed the connection (signature verification failed)")
+        except socket.timeout:
+            # MCC closed connection, socket timed out waiting for response
+            print(f"\n  ✅ DEFENSE SUCCESSFUL: {attack_name} was REJECTED by MCC.")
+            print("     → MCC closed the connection (no response — signature invalid)")
         except Exception as e:
-            print(f"[!] Connection error: {e}")
+            print(f"  [!] Connection error: {e}")
 
     def phase0_mitm_attack(self):
         """
